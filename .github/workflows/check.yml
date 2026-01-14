@@ -1,0 +1,35 @@
+name: Check Changelogs
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Every hour at :00
+  workflow_dispatch:      # Manual trigger button
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check changelogs
+        run: npm run check
+        env:
+          SLACK_WEBHOOK_CLAUDE: ${{ secrets.SLACK_WEBHOOK_CLAUDE }}
+          SLACK_WEBHOOK_GEMINI: ${{ secrets.SLACK_WEBHOOK_GEMINI }}
+          SLACK_WEBHOOK_CHATGPT: ${{ secrets.SLACK_WEBHOOK_CHATGPT }}
+
+      - name: Save updated hashes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update changelog hashes"
+          file_pattern: ".data/*.hash"

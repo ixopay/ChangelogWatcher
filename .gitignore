@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+dist/
+
+# IDE/Editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Claude Code
+.claude/

@@ -1,0 +1,29 @@
+{
+  "name": "changelog-watcher",
+  "version": "2.0.0",
+  "description": "Monitor AI changelogs (Claude, Gemini, ChatGPT) and notify Slack on updates",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "check": "tsx src/index.ts",
+    "check:claude": "tsx src/index.ts claude",
+    "check:gemini": "tsx src/index.ts gemini",
+    "check:chatgpt": "tsx src/index.ts chatgpt",
+    "check:dry": "tsx src/index.ts --dry-run",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write 'src/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts'"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "dotenv": "^17.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.2",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.3"
+  }
+}
