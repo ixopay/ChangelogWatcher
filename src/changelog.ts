@@ -1,7 +1,12 @@
 import { createHash } from "crypto";
 import * as cheerio from "cheerio";
 import { ReleaseSource } from "./config";
-import { readHash, writeHash } from "./hash-store";
+import {
+  readHash,
+  writeHash,
+  readStoredData,
+  writeStoredData,
+} from "./hash-store";
 import * as log from "./logger";
 
 export interface CheckResult {
@@ -89,14 +94,30 @@ function extractMarkdownVersion(content: string): {
   };
 }
 
-function createGenericUpdate(source: ReleaseSource): {
+function createGenericUpdate(source: ReleaseSource, date?: string): {
   version: string;
   formattedChanges: string;
 } {
+  const version = date ? `Updated ${date}` : "Update detected";
   return {
-    version: "Update detected",
+    version,
     formattedChanges: `${source.name} release notes have been updated.\n\nCheck the latest changes here:\n${source.releasePageUrl}`,
   };
+}
+
+// Extract date from Gemini page (format: YYYY.MM.DD)
+function extractGeminiDate(html: string): string | null {
+  const match = html.match(/\d{4}\.\d{2}\.\d{2}/);
+  return match ? match[0] : null;
+}
+
+// Extract date from ChatGPT page (format: "January 12, 2026")
+function extractChatGPTDate(html: string): string | null {
+  const months =
+    "January|February|March|April|May|June|July|August|September|October|November|December";
+  const regex = new RegExp(`(${months})\\s+\\d{1,2},\\s+20\\d{2}`);
+  const match = html.match(regex);
+  return match ? match[0] : null;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -146,28 +167,45 @@ async function parseMarkdown(
   };
 }
 
-async function parseHashOnly(
-  source: ReleaseSource
-): Promise<ParsedContent | null> {
-  const content = await fetchContent(source.url);
-  if (!content) return null;
+interface DateBasedResult {
+  success: boolean;
+  date?: string;
+  content?: ParsedContent;
+  error?: string;
+}
 
-  const { version, formattedChanges } = createGenericUpdate(source);
+async function parseGemini(source: ReleaseSource): Promise<DateBasedResult> {
+  const content = await fetchContent(source.url);
+  if (!content) {
+    return { success: false, error: "Failed to fetch Gemini page" };
+  }
+
+  const date = extractGeminiDate(content);
+  if (!date) {
+    return { success: false, error: "Could not extract date from Gemini page" };
+  }
+
+  const { version, formattedChanges } = createGenericUpdate(source, date);
 
   return {
-    stableContent: extractStableContent(content, source.id),
-    version,
-    formattedChanges,
+    success: true,
+    date,
+    content: {
+      stableContent: date, // Use date as the comparison key
+      version,
+      formattedChanges,
+    },
   };
 }
 
 interface WaybackResult {
   success: boolean;
+  date?: string;
   content?: ParsedContent;
   error?: string;
 }
 
-async function parseWayback(source: ReleaseSource): Promise<WaybackResult> {
+async function parseChatGPT(source: ReleaseSource): Promise<WaybackResult> {
   // Check Wayback Machine availability with retry
   const availabilityUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(source.url)}`;
   const availabilityResponse = await fetchWithRetry(availabilityUrl);
@@ -204,13 +242,21 @@ async function parseWayback(source: ReleaseSource): Promise<WaybackResult> {
     return { success: false, error: "Failed to fetch Wayback content" };
   }
 
-  const content = await contentResponse.text();
-  const { version, formattedChanges } = createGenericUpdate(source);
+  const html = await contentResponse.text();
+  const date = extractChatGPTDate(html);
+
+  if (!date) {
+    // Fall back to generic update if date extraction fails
+    log.warn("  Could not extract date, using snapshot timestamp");
+  }
+
+  const { version, formattedChanges } = createGenericUpdate(source, date || undefined);
 
   return {
     success: true,
+    date: date || undefined,
     content: {
-      stableContent: extractStableContent(content, source.id),
+      stableContent: date || snapshot.timestamp, // Use date or fallback to timestamp
       version,
       formattedChanges,
     },
@@ -225,28 +271,41 @@ export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
   try {
     // Parse content based on type
     let parsed: ParsedContent | null = null;
+    let extractedDate: string | undefined;
 
     switch (source.parserType) {
       case "markdown":
         parsed = await parseMarkdown(source);
         break;
-      case "hash-only":
-        parsed = await parseHashOnly(source);
+
+      case "hash-only": {
+        // Gemini - date-based detection
+        const geminiResult = await parseGemini(source);
+        if (!geminiResult.success) {
+          return { source, hasChanged: false, error: geminiResult.error };
+        }
+        parsed = geminiResult.content!;
+        extractedDate = geminiResult.date;
         break;
+      }
+
       case "wayback": {
-        const waybackResult = await parseWayback(source);
-        if (!waybackResult.success) {
+        // ChatGPT - date-based detection via Wayback
+        const chatgptResult = await parseChatGPT(source);
+        if (!chatgptResult.success) {
           // Wayback failures are transient - don't fail the workflow
           return {
             source,
             hasChanged: false,
-            error: waybackResult.error,
+            error: chatgptResult.error,
             isTransient: true,
           };
         }
-        parsed = waybackResult.content!;
+        parsed = chatgptResult.content!;
+        extractedDate = chatgptResult.date;
         break;
       }
+
       default:
         return { source, hasChanged: false, error: `Unknown parser type` };
     }
@@ -255,7 +314,27 @@ export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
       return { source, hasChanged: false, error: "Failed to fetch content" };
     }
 
-    // Compare hashes
+    // For date-based sources, compare dates
+    if (extractedDate) {
+      const storedData = readStoredData(source);
+      const storedDate = storedData?.date;
+
+      if (storedDate === extractedDate) {
+        return { source, hasChanged: false };
+      }
+
+      // New date detected - save it
+      writeStoredData(source, { date: extractedDate });
+
+      return {
+        source,
+        hasChanged: true,
+        version: parsed.version,
+        formattedChanges: parsed.formattedChanges,
+      };
+    }
+
+    // For hash-based sources (Claude), compare hashes
     const newHash = computeHash(parsed.stableContent);
     const oldHash = readHash(source);
 
