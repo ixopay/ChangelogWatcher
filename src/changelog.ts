@@ -1,12 +1,5 @@
-import { createHash } from "crypto";
-import * as cheerio from "cheerio";
 import { ReleaseSource } from "./config";
-import {
-  readHash,
-  writeHash,
-  readStoredData,
-  writeStoredData,
-} from "./hash-store";
+import { readStoredData, writeStoredData } from "./hash-store";
 import * as log from "./logger";
 
 export interface CheckResult {
@@ -19,7 +12,6 @@ export interface CheckResult {
 }
 
 interface ParsedContent {
-  stableContent: string;
   version: string;
   formattedChanges: string;
 }
@@ -27,29 +19,6 @@ interface ParsedContent {
 // =============================================================================
 // Utility Functions
 // =============================================================================
-
-function computeHash(content: string): string {
-  return createHash("sha256").update(content).digest("hex");
-}
-
-function extractStableContent(html: string, sourceId: string): string {
-  const $ = cheerio.load(html);
-
-  $("script").remove();
-  $("style").remove();
-  $("link").remove();
-  $("meta").remove();
-  $("noscript").remove();
-  $("iframe").remove();
-
-  if (sourceId === "gemini") {
-    const mainContent =
-      $("main").text() || $("article").text() || $("body").text();
-    return mainContent.replace(/\s+/g, " ").trim();
-  }
-
-  return $("body").text().replace(/\s+/g, " ").trim();
-}
 
 async function fetchContent(url: string): Promise<string | null> {
   const response = await fetch(url, {
@@ -152,29 +121,32 @@ async function fetchWithRetry(
 // Parser Functions - Each handles fetch + parse for its type
 // =============================================================================
 
-async function parseMarkdown(
-  source: ReleaseSource
-): Promise<ParsedContent | null> {
-  const content = await fetchContent(source.url);
-  if (!content) return null;
-
-  const { version, changes } = extractMarkdownVersion(content);
-
-  return {
-    stableContent: content,
-    version,
-    formattedChanges: changes,
-  };
-}
-
-interface DateBasedResult {
+interface ParserResult {
   success: boolean;
-  date?: string;
+  version?: string;
   content?: ParsedContent;
   error?: string;
 }
 
-async function parseGemini(source: ReleaseSource): Promise<DateBasedResult> {
+async function parseMarkdown(source: ReleaseSource): Promise<ParserResult> {
+  const content = await fetchContent(source.url);
+  if (!content) {
+    return { success: false, error: "Failed to fetch Claude Code changelog" };
+  }
+
+  const { version, changes } = extractMarkdownVersion(content);
+
+  return {
+    success: true,
+    version,
+    content: {
+      version,
+      formattedChanges: changes,
+    },
+  };
+}
+
+async function parseGemini(source: ReleaseSource): Promise<ParserResult> {
   const content = await fetchContent(source.url);
   if (!content) {
     return { success: false, error: "Failed to fetch Gemini page" };
@@ -189,23 +161,15 @@ async function parseGemini(source: ReleaseSource): Promise<DateBasedResult> {
 
   return {
     success: true,
-    date,
+    version: date, // Use date as the comparison key
     content: {
-      stableContent: date, // Use date as the comparison key
       version,
       formattedChanges,
     },
   };
 }
 
-interface WaybackResult {
-  success: boolean;
-  date?: string;
-  content?: ParsedContent;
-  error?: string;
-}
-
-async function parseChatGPT(source: ReleaseSource): Promise<WaybackResult> {
+async function parseChatGPT(source: ReleaseSource): Promise<ParserResult> {
   // Check Wayback Machine availability with retry
   const availabilityUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(source.url)}`;
   const availabilityResponse = await fetchWithRetry(availabilityUrl);
@@ -250,13 +214,13 @@ async function parseChatGPT(source: ReleaseSource): Promise<WaybackResult> {
     log.warn("  Could not extract date, using snapshot timestamp");
   }
 
+  const comparisonKey = date || snapshot.timestamp;
   const { version, formattedChanges } = createGenericUpdate(source, date || undefined);
 
   return {
     success: true,
-    date: date || undefined,
+    version: comparisonKey, // Use date or fallback to timestamp
     content: {
-      stableContent: date || snapshot.timestamp, // Use date or fallback to timestamp
       version,
       formattedChanges,
     },
@@ -270,86 +234,52 @@ async function parseChatGPT(source: ReleaseSource): Promise<WaybackResult> {
 export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
   try {
     // Parse content based on type
-    let parsed: ParsedContent | null = null;
-    let extractedDate: string | undefined;
+    let result: ParserResult;
+    let isTransient = false;
 
     switch (source.parserType) {
       case "markdown":
-        parsed = await parseMarkdown(source);
+        result = await parseMarkdown(source);
         break;
 
-      case "hash-only": {
-        // Gemini - date-based detection
-        const geminiResult = await parseGemini(source);
-        if (!geminiResult.success) {
-          return { source, hasChanged: false, error: geminiResult.error };
-        }
-        parsed = geminiResult.content!;
-        extractedDate = geminiResult.date;
+      case "hash-only":
+        result = await parseGemini(source);
         break;
-      }
 
-      case "wayback": {
-        // ChatGPT - date-based detection via Wayback
-        const chatgptResult = await parseChatGPT(source);
-        if (!chatgptResult.success) {
-          // Wayback failures are transient - don't fail the workflow
-          return {
-            source,
-            hasChanged: false,
-            error: chatgptResult.error,
-            isTransient: true,
-          };
-        }
-        parsed = chatgptResult.content!;
-        extractedDate = chatgptResult.date;
+      case "wayback":
+        result = await parseChatGPT(source);
+        isTransient = true; // Wayback failures are transient
         break;
-      }
 
       default:
-        return { source, hasChanged: false, error: `Unknown parser type` };
+        return { source, hasChanged: false, error: "Unknown parser type" };
     }
 
-    if (!parsed) {
-      return { source, hasChanged: false, error: "Failed to fetch content" };
-    }
-
-    // For date-based sources, compare dates
-    if (extractedDate) {
-      const storedData = readStoredData(source);
-      const storedDate = storedData?.date;
-
-      if (storedDate === extractedDate) {
-        return { source, hasChanged: false };
-      }
-
-      // New date detected - save it
-      writeStoredData(source, { date: extractedDate });
-
+    if (!result.success) {
       return {
         source,
-        hasChanged: true,
-        version: parsed.version,
-        formattedChanges: parsed.formattedChanges,
+        hasChanged: false,
+        error: result.error,
+        isTransient,
       };
     }
 
-    // For hash-based sources (Claude), compare hashes
-    const newHash = computeHash(parsed.stableContent);
-    const oldHash = readHash(source);
+    // Compare version/date with stored value
+    const storedData = readStoredData(source);
+    const storedVersion = storedData?.version;
 
-    if (oldHash === newHash) {
+    if (storedVersion === result.version) {
       return { source, hasChanged: false };
     }
 
-    // Change detected
-    writeHash(source, newHash);
+    // Change detected - save new version
+    writeStoredData(source, { version: result.version });
 
     return {
       source,
       hasChanged: true,
-      version: parsed.version,
-      formattedChanges: parsed.formattedChanges,
+      version: result.content!.version,
+      formattedChanges: result.content!.formattedChanges,
     };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);

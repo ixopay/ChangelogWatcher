@@ -28,15 +28,15 @@ npm run typecheck          # TypeScript type checking
 ## How It Works
 
 1. Fetches changelog content from configured URLs
-2. Extracts date or computes hash depending on parser type
+2. Extracts version/date identifier from each source
 3. Compares with stored state in `.data/*.json`
-4. If changed: extracts version info, sends Slack notification, saves new state
+4. If changed: sends Slack notification, saves new state
 
 ## Parser Types
 
-- `markdown`: Direct fetch, regex version extraction, hash comparison (Claude Code)
-- `hash-only`: HTML fetch, date extraction from page (Gemini)
-- `wayback`: Wayback Machine archive lookup, date extraction (ChatGPT)
+- `markdown`: Direct fetch, extracts semver from headers (Claude Code)
+- `hash-only`: HTML fetch, extracts date from page (Gemini)
+- `wayback`: Wayback Machine archive, extracts date (ChatGPT)
 
 ## Environment Variables
 
@@ -54,6 +54,6 @@ Slack webhook URLs are configured via environment variables:
 ## Design Principles
 
 - No frameworks - plain TypeScript
-- Minimal dependencies (cheerio, dotenv)
+- Minimal dependencies (dotenv only)
 - File-based state (no database)
 - Single responsibility per file

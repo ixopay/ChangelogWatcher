@@ -10,7 +10,7 @@ Currently monitors:
 ## How It Works
 
 1. Fetches changelog content from each source
-2. Extracts date or computes hash depending on source type
+2. Extracts version/date identifier from each source
 3. Compares with stored state from previous run
 4. If changed, sends a notification to Slack with version info
 
@@ -88,8 +88,8 @@ newsource: {
 ```
 
 Parser types:
-- `markdown` - Raw markdown file, extracts version from headers, uses hash comparison
-- `hash-only` - HTML page, extracts date for comparison (Gemini format: `YYYY.MM.DD`)
+- `markdown` - Raw markdown file, extracts semver from headers (Claude Code)
+- `hash-only` - HTML page, extracts date (Gemini format: `YYYY.MM.DD`)
 - `wayback` - Uses Wayback Machine for pages that block bots, extracts date
 
 ## Project Structure
@@ -98,9 +98,9 @@ Parser types:
 src/
 ├── index.ts        # CLI entry point
 ├── config.ts       # Source definitions
-├── changelog.ts    # Fetch and hash logic
+├── changelog.ts    # Fetch and parse logic
 ├── slack.ts        # Slack notifications
-├── hash-store.ts   # File-based hash storage
+├── hash-store.ts   # File-based state storage
 └── logger.ts       # Console logging
 ```
 
