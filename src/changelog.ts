@@ -10,6 +10,7 @@ export interface CheckResult {
   version?: string;
   formattedChanges?: string;
   error?: string;
+  isTransient?: boolean; // True for retryable/non-critical failures (e.g., Wayback down)
 }
 
 interface ParsedContent {
@@ -98,6 +99,34 @@ function createGenericUpdate(source: ReleaseSource): {
   };
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(
+  url: string,
+  options?: RequestInit,
+  retries = 2,
+  delayMs = 2000
+): Promise<Response | null> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, options);
+      if (response.ok) return response;
+      if (attempt < retries) {
+        log.warn(`  Retry ${attempt}/${retries - 1} after ${response.status}...`);
+        await sleep(delayMs);
+      }
+    } catch {
+      if (attempt < retries) {
+        log.warn(`  Retry ${attempt}/${retries - 1} after network error...`);
+        await sleep(delayMs);
+      }
+    }
+  }
+  return null;
+}
+
 // =============================================================================
 // Parser Functions - Each handles fetch + parse for its type
 // =============================================================================
@@ -132,32 +161,59 @@ async function parseHashOnly(
   };
 }
 
-async function parseWayback(
-  source: ReleaseSource
-): Promise<ParsedContent | null> {
-  // Check Wayback Machine availability
+interface WaybackResult {
+  success: boolean;
+  content?: ParsedContent;
+  error?: string;
+}
+
+async function parseWayback(source: ReleaseSource): Promise<WaybackResult> {
+  // Check Wayback Machine availability with retry
   const availabilityUrl = `https://archive.org/wayback/available?url=${encodeURIComponent(source.url)}`;
-  const availabilityResponse = await fetch(availabilityUrl);
+  const availabilityResponse = await fetchWithRetry(availabilityUrl);
 
-  if (!availabilityResponse.ok) return null;
+  if (!availabilityResponse) {
+    return { success: false, error: "Wayback Machine API unavailable" };
+  }
 
-  const availability = await availabilityResponse.json();
+  let availability;
+  try {
+    availability = await availabilityResponse.json();
+  } catch {
+    return { success: false, error: "Invalid response from Wayback Machine" };
+  }
+
   const snapshot = availability.archived_snapshots?.closest;
 
-  if (!snapshot?.available) return null;
+  if (!snapshot?.available) {
+    return { success: false, error: "No Wayback snapshot available" };
+  }
 
   log.info(`  Found Wayback snapshot from ${snapshot.timestamp}`);
 
-  // Fetch archived content
-  const content = await fetchContent(snapshot.url);
-  if (!content) return null;
+  // Fetch archived content with retry
+  const contentResponse = await fetchWithRetry(snapshot.url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
 
+  if (!contentResponse) {
+    return { success: false, error: "Failed to fetch Wayback content" };
+  }
+
+  const content = await contentResponse.text();
   const { version, formattedChanges } = createGenericUpdate(source);
 
   return {
-    stableContent: extractStableContent(content, source.id),
-    version,
-    formattedChanges,
+    success: true,
+    content: {
+      stableContent: extractStableContent(content, source.id),
+      version,
+      formattedChanges,
+    },
   };
 }
 
@@ -168,7 +224,7 @@ async function parseWayback(
 export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
   try {
     // Parse content based on type
-    let parsed: ParsedContent | null;
+    let parsed: ParsedContent | null = null;
 
     switch (source.parserType) {
       case "markdown":
@@ -177,9 +233,20 @@ export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
       case "hash-only":
         parsed = await parseHashOnly(source);
         break;
-      case "wayback":
-        parsed = await parseWayback(source);
+      case "wayback": {
+        const waybackResult = await parseWayback(source);
+        if (!waybackResult.success) {
+          // Wayback failures are transient - don't fail the workflow
+          return {
+            source,
+            hasChanged: false,
+            error: waybackResult.error,
+            isTransient: true,
+          };
+        }
+        parsed = waybackResult.content!;
         break;
+      }
       default:
         return { source, hasChanged: false, error: `Unknown parser type` };
     }

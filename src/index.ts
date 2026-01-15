@@ -71,8 +71,13 @@ async function main(): Promise<void> {
     const result = await checkSource(source);
 
     if (result.error) {
-      log.error(`  ${result.error}`);
-      errorsEncountered++;
+      if (result.isTransient) {
+        // Transient errors (e.g., Wayback down) are warnings, not failures
+        log.warn(`  ${result.error} (skipped)`);
+      } else {
+        log.error(`  ${result.error}`);
+        errorsEncountered++;
+      }
       continue;
     }
 
