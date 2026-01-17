@@ -13,16 +13,23 @@
     "check:chatgpt": "tsx src/index.ts chatgpt",
     "check:dry": "tsx src/index.ts --dry-run",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "format": "prettier --write 'src/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts'"
   },
   "dependencies": {
-    "dotenv": "^17.2.0"
+    "dotenv": "^17.2.0",
+    "semver": "^7.7.3"
   },
   "devDependencies": {
     "@types/node": "^24.6.2",
+    "@types/semver": "^7.7.1",
+    "@vitest/coverage-v8": "^4.0.17",
     "prettier": "^3.6.2",
     "tsx": "^4.20.3",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
   }
 }

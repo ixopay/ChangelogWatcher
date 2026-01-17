@@ -1,6 +1,7 @@
 import { ReleaseSource } from "./config";
 import { readStoredData, writeStoredData } from "./hash-store";
 import * as log from "./logger";
+import semver from "semver";
 
 export interface CheckResult {
   source: ReleaseSource;
@@ -16,7 +17,7 @@ interface ParsedContent {
   formattedChanges: string;
 }
 
-interface VersionEntry {
+export interface VersionEntry {
   version: string;
   changes: string;
 }
@@ -38,7 +39,7 @@ async function fetchContent(url: string): Promise<string | null> {
 }
 
 // Extract ALL versions from a markdown changelog (newest first)
-function extractAllVersions(content: string): VersionEntry[] {
+export function extractAllVersions(content: string): VersionEntry[] {
   const lines = content.split("\n");
   const versions: VersionEntry[] = [];
   let currentVersion: string | null = null;
@@ -75,21 +76,22 @@ function extractAllVersions(content: string): VersionEntry[] {
 }
 
 // Compare semantic versions: returns 1 if a > b, -1 if a < b, 0 if equal
-function compareVersions(a: string, b: string): number {
-  const partsA = a.split(".").map(Number);
-  const partsB = b.split(".").map(Number);
+// Uses semver library for proper handling of pre-release versions
+export function compareVersions(a: string, b: string): number {
+  // Clean versions to handle any extra characters
+  const cleanA = semver.clean(a) || semver.coerce(a)?.version;
+  const cleanB = semver.clean(b) || semver.coerce(b)?.version;
 
-  for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-    const numA = partsA[i] || 0;
-    const numB = partsB[i] || 0;
-    if (numA > numB) return 1;
-    if (numA < numB) return -1;
+  if (!cleanA || !cleanB) {
+    // Fallback to string comparison if semver can't parse
+    return a.localeCompare(b);
   }
-  return 0;
+
+  return semver.compare(cleanA, cleanB);
 }
 
 // Filter versions to only those newer than lastKnownVersion
-function getVersionsSince(
+export function getVersionsSince(
   allVersions: VersionEntry[],
   lastKnownVersion: string | null
 ): VersionEntry[] {
@@ -105,13 +107,13 @@ function getVersionsSince(
 }
 
 // Extract date from Gemini page (format: YYYY.MM.DD)
-function extractGeminiDate(html: string): string | null {
+export function extractGeminiDate(html: string): string | null {
   const match = html.match(/\d{4}\.\d{2}\.\d{2}/);
   return match ? match[0] : null;
 }
 
 // Extract date from ChatGPT page (format: "January 12, 2026")
-function extractChatGPTDate(html: string): string | null {
+export function extractChatGPTDate(html: string): string | null {
   const months =
     "January|February|March|April|May|June|July|August|September|October|November|December";
   const regex = new RegExp(`(${months})\\s+\\d{1,2},\\s+20\\d{2}`);
@@ -120,7 +122,7 @@ function extractChatGPTDate(html: string): string | null {
 }
 
 // Strip HTML tags and normalize whitespace
-function stripHtml(html: string): string {
+export function stripHtml(html: string): string {
   return html
     .replace(/<[^>]*>/g, " ")
     .replace(/&amp;/g, "&")
@@ -135,7 +137,7 @@ function stripHtml(html: string): string {
 
 // Extract changes for a specific date from Gemini page
 // Format: "2025.12.17\nTitle\nWhat: ...\nWhy: ...\n2025.12.16..."
-function extractGeminiChanges(
+export function extractGeminiChanges(
   html: string,
   targetDate: string
 ): string | null {
@@ -167,7 +169,7 @@ function extractGeminiChanges(
 
 // Extract changes for a specific date from ChatGPT page
 // Format: "January 15, 2026\nTitle\nContent...\nJanuary 12, 2026..."
-function extractChatGPTChanges(
+export function extractChatGPTChanges(
   html: string,
   targetDate: string
 ): string | null {
