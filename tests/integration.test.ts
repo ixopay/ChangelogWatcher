@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { checkSource } from "./changelog";
-import { ReleaseSource } from "./config";
-import * as hashStore from "./hash-store";
+import { checkSource } from "../src/changelog";
+import { ReleaseSource } from "../src/config";
+import * as hashStore from "../src/hash-store";
 
 // Mock dependencies
-vi.mock("./hash-store");
-vi.mock("./logger", () => ({
+vi.mock("../src/hash-store");
+vi.mock("../src/logger", () => ({
   info: vi.fn(),
   success: vi.fn(),
   warn: vi.fn(),

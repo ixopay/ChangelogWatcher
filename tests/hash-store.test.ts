@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import fs from "fs";
 import path from "path";
-import { ensureDataDir, readStoredData, writeStoredData } from "./hash-store";
-import { ReleaseSource } from "./config";
+import { ensureDataDir, readStoredData, writeStoredData } from "../src/hash-store";
+import { ReleaseSource } from "../src/config";
 
 // Mock fs module
 vi.mock("fs");
