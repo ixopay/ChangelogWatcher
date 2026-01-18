@@ -50,6 +50,9 @@ npm run check:chatgpt
 
 # Dry run (no notifications)
 npm run check:dry
+
+# Run tests
+npm run test
 ```
 
 ## Automated Scheduling
@@ -80,7 +83,7 @@ newsource: {
   id: "newsource",
   name: "New Source",
   url: "https://example.com/changelog",
-  parserType: "markdown", // or "hash-only" or "wayback"
+  parserType: "markdown", // or "wayback"
   stateFile: "newsource.json",
   releasePageUrl: "https://example.com/changelog",
   slackWebhookUrl: process.env.SLACK_WEBHOOK_NEWSOURCE || "",
@@ -89,8 +92,7 @@ newsource: {
 
 Parser types:
 - `markdown` - Raw markdown file, extracts semver from headers (Claude Code)
-- `hash-only` - HTML page, extracts date (Gemini format: `YYYY.MM.DD`)
-- `wayback` - Uses Wayback Machine for pages that block bots, extracts date
+- `wayback` - Uses Wayback Machine for pages that block bots, extracts date (Gemini, ChatGPT)
 
 ## Project Structure
 
@@ -102,6 +104,8 @@ src/
 ├── slack.ts        # Slack notifications
 ├── hash-store.ts   # File-based state storage
 └── logger.ts       # Console logging
+tests/
+└── *.test.ts       # Unit and integration tests
 ```
 
 ## License

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { sendSlackNotification, SlackPayload } from "./slack";
+import { sendSlackNotification, SlackPayload } from "../src/slack";
 
 const testPayload: SlackPayload = {
   source: "Claude Code",

@@ -9,7 +9,7 @@ import {
   extractGeminiChanges,
   extractChatGPTChanges,
   VersionEntry,
-} from "./changelog";
+} from "../src/changelog";
 
 describe("extractAllVersions", () => {
   it("extracts versions from markdown headers with brackets", () => {

@@ -12,6 +12,8 @@ src/
 ├── slack.ts        # Slack webhook notification
 ├── hash-store.ts   # File-based state persistence
 └── logger.ts       # Console logging with colors
+tests/
+└── *.test.ts       # Unit and integration tests (Vitest)
 ```
 
 ## Key Commands
@@ -23,6 +25,9 @@ npm run check:gemini       # Check Gemini only
 npm run check:chatgpt      # Check ChatGPT only
 npm run check:dry          # Dry run (no notifications)
 npm run typecheck          # TypeScript type checking
+npm run test               # Run tests once
+npm run test:watch         # Watch mode testing
+npm run test:coverage      # Generate coverage reports
 ```
 
 ## How It Works
@@ -35,8 +40,7 @@ npm run typecheck          # TypeScript type checking
 ## Parser Types
 
 - `markdown`: Direct fetch, extracts semver from headers (Claude Code)
-- `hash-only`: HTML fetch, extracts date from page (Gemini)
-- `wayback`: Wayback Machine archive, extracts date (ChatGPT)
+- `wayback`: Wayback Machine archive, extracts date (Gemini, ChatGPT)
 
 ## Environment Variables
 
@@ -54,6 +58,6 @@ Slack webhook URLs are configured via environment variables:
 ## Design Principles
 
 - No frameworks - plain TypeScript
-- Minimal dependencies (dotenv only)
+- Minimal dependencies (dotenv, semver)
 - File-based state (no database)
 - Single responsibility per file
