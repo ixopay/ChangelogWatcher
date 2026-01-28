@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   extractAllVersions,
   compareVersions,
+  isNewerIdentifier,
   getVersionsSince,
   stripHtml,
   extractGeminiDate,
@@ -139,6 +140,53 @@ describe("compareVersions", () => {
 
   it("handles pre-release with numbers (rc.1 < rc.2)", () => {
     expect(compareVersions("1.0.0-rc.1", "1.0.0-rc.2")).toBe(-1);
+  });
+});
+
+describe("isNewerIdentifier", () => {
+  describe("markdown parser (semver)", () => {
+    it("returns true when new version is greater", () => {
+      expect(isNewerIdentifier("1.1.0", "1.0.0", "markdown")).toBe(true);
+    });
+
+    it("returns false when new version is smaller", () => {
+      expect(isNewerIdentifier("1.0.0", "1.1.0", "markdown")).toBe(false);
+    });
+
+    it("returns false when versions are equal", () => {
+      expect(isNewerIdentifier("1.0.0", "1.0.0", "markdown")).toBe(false);
+    });
+
+    it("handles pre-release versions correctly", () => {
+      expect(isNewerIdentifier("1.0.0", "1.0.0-beta", "markdown")).toBe(true);
+      expect(isNewerIdentifier("1.0.0-beta", "1.0.0", "markdown")).toBe(false);
+    });
+  });
+
+  describe("wayback parser (YYYY.MM.DD dates)", () => {
+    it("returns true when new date is later", () => {
+      expect(isNewerIdentifier("2026.01.20", "2025.12.17", "wayback")).toBe(
+        true
+      );
+    });
+
+    it("returns false when new date is earlier", () => {
+      expect(isNewerIdentifier("2025.12.17", "2026.01.20", "wayback")).toBe(
+        false
+      );
+    });
+
+    it("returns false when dates are equal", () => {
+      expect(isNewerIdentifier("2026.01.20", "2026.01.20", "wayback")).toBe(
+        false
+      );
+    });
+
+    it("handles year boundary correctly", () => {
+      expect(isNewerIdentifier("2026.01.01", "2025.12.31", "wayback")).toBe(
+        true
+      );
+    });
   });
 });
 

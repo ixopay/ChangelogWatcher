@@ -90,6 +90,22 @@ export function compareVersions(a: string, b: string): number {
   return semver.compare(cleanA, cleanB);
 }
 
+// Check if newId is newer than oldId based on parser type
+// Used to prevent regression to older versions/dates
+export function isNewerIdentifier(
+  newId: string,
+  oldId: string,
+  parserType: "markdown" | "wayback"
+): boolean {
+  if (parserType === "markdown") {
+    // Use semver comparison for Claude versions
+    return compareVersions(newId, oldId) > 0;
+  } else {
+    // Wayback uses YYYY.MM.DD format - lexicographic comparison works
+    return newId > oldId;
+  }
+}
+
 // Filter versions to only those newer than lastKnownVersion
 export function getVersionsSince(
   allVersions: VersionEntry[],
@@ -427,6 +443,18 @@ export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
 
     // Compare version/date with stored value
     if (storedVersion === result.version) {
+      return { source, hasChanged: false };
+    }
+
+    // Prevent regression: only update if new version is actually newer
+    if (
+      storedVersion &&
+      result.version &&
+      !isNewerIdentifier(result.version, storedVersion, source.parserType)
+    ) {
+      log.warn(
+        `  Extracted ${result.version} is not newer than stored ${storedVersion}, skipping`
+      );
       return { source, hasChanged: false };
     }
 
