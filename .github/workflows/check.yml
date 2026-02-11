@@ -24,7 +24,8 @@ jobs:
       - name: Check changelogs
         run: npm run check
         env:
-          SLACK_WEBHOOK_CLAUDE: ${{ secrets.SLACK_WEBHOOK_CLAUDE }}
+          SLACK_WEBHOOK_CLAUDE_CODE: ${{ secrets.SLACK_WEBHOOK_CLAUDE_CODE }}
+          SLACK_WEBHOOK_CLAUDE_BLOG: ${{ secrets.SLACK_WEBHOOK_CLAUDE_BLOG }}
           SLACK_WEBHOOK_GEMINI: ${{ secrets.SLACK_WEBHOOK_GEMINI }}
           SLACK_WEBHOOK_CHATGPT: ${{ secrets.SLACK_WEBHOOK_CHATGPT }}
 

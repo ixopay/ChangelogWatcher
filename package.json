@@ -8,7 +8,8 @@
   },
   "scripts": {
     "check": "tsx src/index.ts",
-    "check:claude": "tsx src/index.ts claude",
+    "check:claude-code": "tsx src/index.ts claude-code",
+    "check:claude-blog": "tsx src/index.ts claude-blog",
     "check:gemini": "tsx src/index.ts gemini",
     "check:chatgpt": "tsx src/index.ts chatgpt",
     "check:dry": "tsx src/index.ts --dry-run",

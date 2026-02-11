@@ -6,9 +6,12 @@ import {
   getVersionsSince,
   stripHtml,
   extractGeminiDate,
-  extractChatGPTDate,
+  extractMonthDayYearDate,
+  parseMonthDayYearDate,
   extractGeminiChanges,
-  extractChatGPTChanges,
+  extractMonthDayYearChanges,
+  extractBlogPosts,
+  getNewBlogPosts,
   VersionEntry,
 } from "../src/changelog";
 
@@ -293,25 +296,25 @@ describe("extractGeminiDate", () => {
   });
 });
 
-describe("extractChatGPTDate", () => {
+describe("extractMonthDayYearDate", () => {
   it("extracts Month DD, YYYY format", () => {
     const html = "<p>January 15, 2026</p>";
-    expect(extractChatGPTDate(html)).toBe("January 15, 2026");
+    expect(extractMonthDayYearDate(html)).toBe("January 15, 2026");
   });
 
   it("handles single digit day", () => {
     const html = "December 5, 2025";
-    expect(extractChatGPTDate(html)).toBe("December 5, 2025");
+    expect(extractMonthDayYearDate(html)).toBe("December 5, 2025");
   });
 
   it("extracts first date when multiple present", () => {
     const html = "January 15, 2026 and December 10, 2025";
-    expect(extractChatGPTDate(html)).toBe("January 15, 2026");
+    expect(extractMonthDayYearDate(html)).toBe("January 15, 2026");
   });
 
   it("returns null when no date found", () => {
     const html = "<p>No date here</p>";
-    expect(extractChatGPTDate(html)).toBeNull();
+    expect(extractMonthDayYearDate(html)).toBeNull();
   });
 
   it("handles all months", () => {
@@ -332,13 +335,13 @@ describe("extractChatGPTDate", () => {
 
     for (const month of months) {
       const html = `${month} 1, 2025`;
-      expect(extractChatGPTDate(html)).toBe(`${month} 1, 2025`);
+      expect(extractMonthDayYearDate(html)).toBe(`${month} 1, 2025`);
     }
   });
 
   it("does not match YYYY.MM.DD format", () => {
     const html = "2025.01.15";
-    expect(extractChatGPTDate(html)).toBeNull();
+    expect(extractMonthDayYearDate(html)).toBeNull();
   });
 });
 
@@ -384,7 +387,7 @@ describe("extractGeminiChanges", () => {
   });
 });
 
-describe("extractChatGPTChanges", () => {
+describe("extractMonthDayYearChanges", () => {
   const sampleHtml = `
     <div>
       <h2>January 17, 2026</h2>
@@ -397,30 +400,158 @@ describe("extractChatGPTChanges", () => {
   `;
 
   it("extracts content for target date", () => {
-    const changes = extractChatGPTChanges(sampleHtml, "January 17, 2026");
+    const changes = extractMonthDayYearChanges(sampleHtml, "January 17, 2026");
     expect(changes).not.toBeNull();
     expect(changes).toContain("New Feature Title");
     expect(changes).toContain("Details about the feature");
   });
 
   it("stops at next date boundary", () => {
-    const changes = extractChatGPTChanges(sampleHtml, "January 17, 2026");
+    const changes = extractMonthDayYearChanges(sampleHtml, "January 17, 2026");
     expect(changes).not.toContain("Older update");
   });
 
   it("returns null for non-existent date", () => {
-    const changes = extractChatGPTChanges(sampleHtml, "February 1, 2020");
+    const changes = extractMonthDayYearChanges(sampleHtml, "February 1, 2020");
     expect(changes).toBeNull();
   });
 
   it("extracts content for last date in document", () => {
-    const changes = extractChatGPTChanges(sampleHtml, "January 10, 2026");
+    const changes = extractMonthDayYearChanges(sampleHtml, "January 10, 2026");
     expect(changes).not.toBeNull();
     expect(changes).toContain("Older update");
   });
 
   it("removes the date from the returned content", () => {
-    const changes = extractChatGPTChanges(sampleHtml, "January 17, 2026");
+    const changes = extractMonthDayYearChanges(sampleHtml, "January 17, 2026");
     expect(changes).not.toContain("January 17, 2026");
+  });
+});
+
+describe("parseMonthDayYearDate", () => {
+  it("parses a valid human-readable date", () => {
+    const date = parseMonthDayYearDate("January 12, 2026");
+    expect(date).not.toBeNull();
+    expect(date!.getFullYear()).toBe(2026);
+    expect(date!.getMonth()).toBe(0); // January = 0
+    expect(date!.getDate()).toBe(12);
+  });
+
+  it("parses all months correctly", () => {
+    const months = [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December",
+    ];
+    for (let i = 0; i < months.length; i++) {
+      const date = parseMonthDayYearDate(`${months[i]} 1, 2025`);
+      expect(date).not.toBeNull();
+      expect(date!.getMonth()).toBe(i);
+    }
+  });
+
+  it("returns null for invalid format", () => {
+    expect(parseMonthDayYearDate("2025.01.15")).toBeNull();
+    expect(parseMonthDayYearDate("")).toBeNull();
+    expect(parseMonthDayYearDate("not a date")).toBeNull();
+  });
+
+  it("returns null for invalid month name", () => {
+    expect(parseMonthDayYearDate("Smarch 1, 2025")).toBeNull();
+  });
+});
+
+describe("isNewerIdentifier - human-readable dates", () => {
+  it("correctly compares dates across months (February > January)", () => {
+    expect(isNewerIdentifier("February 1, 2026", "January 30, 2026", "wayback")).toBe(true);
+  });
+
+  it("correctly compares dates within same month", () => {
+    expect(isNewerIdentifier("January 20, 2026", "January 10, 2026", "wayback")).toBe(true);
+  });
+
+  it("returns false when earlier date is compared to later", () => {
+    expect(isNewerIdentifier("January 10, 2026", "January 20, 2026", "wayback")).toBe(false);
+  });
+
+  it("returns false when dates are equal", () => {
+    expect(isNewerIdentifier("January 15, 2026", "January 15, 2026", "wayback")).toBe(false);
+  });
+
+  it("correctly compares across year boundaries", () => {
+    expect(isNewerIdentifier("January 1, 2026", "December 31, 2025", "wayback")).toBe(true);
+  });
+
+  it("still works with YYYY.MM.DD format (Gemini)", () => {
+    expect(isNewerIdentifier("2026.01.20", "2025.12.17", "wayback")).toBe(true);
+  });
+});
+
+describe("extractBlogPosts", () => {
+  it("extracts title/date pairs from blog HTML", () => {
+    const html = `
+      <div>
+        <h2>Introducing Claude 4.5</h2>
+        <p>February 10, 2026</p>
+        <h2>Claude gets memory</h2>
+        <p>January 28, 2026</p>
+        <h2>Model Card update</h2>
+        <p>January 15, 2026</p>
+      </div>
+    `;
+    const posts = extractBlogPosts(html);
+    expect(posts).toHaveLength(3);
+    expect(posts[0].title).toContain("Introducing Claude 4");
+    expect(posts[0].date).toBe("February 10, 2026");
+    expect(posts[1].date).toBe("January 28, 2026");
+    expect(posts[2].date).toBe("January 15, 2026");
+  });
+
+  it("returns empty array when no posts found", () => {
+    const html = "<html><p>No blog content</p></html>";
+    const posts = extractBlogPosts(html);
+    expect(posts).toHaveLength(0);
+  });
+});
+
+describe("getNewBlogPosts", () => {
+  const posts = [
+    { title: "Post C", date: "February 10, 2026" },
+    { title: "Post B", date: "January 28, 2026" },
+    { title: "Post A", date: "January 15, 2026" },
+  ];
+
+  it("returns only newest post on first run (no stored title)", () => {
+    const result = getNewBlogPosts(posts, null);
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("Post C");
+  });
+
+  it("returns new posts since stored title", () => {
+    const result = getNewBlogPosts(posts, "Post A");
+    expect(result).toHaveLength(2);
+    expect(result[0].title).toBe("Post C");
+    expect(result[1].title).toBe("Post B");
+  });
+
+  it("returns single new post", () => {
+    const result = getNewBlogPosts(posts, "Post B");
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("Post C");
+  });
+
+  it("returns empty when no new posts", () => {
+    const result = getNewBlogPosts(posts, "Post C");
+    expect(result).toHaveLength(0);
+  });
+
+  it("returns newest post when stored title not found", () => {
+    const result = getNewBlogPosts(posts, "Deleted Post");
+    expect(result).toHaveLength(1);
+    expect(result[0].title).toBe("Post C");
+  });
+
+  it("returns empty for empty post list", () => {
+    const result = getNewBlogPosts([], "Post A");
+    expect(result).toHaveLength(0);
   });
 });

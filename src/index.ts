@@ -4,7 +4,7 @@ import { checkSource } from "./changelog";
 import { sendSlackNotification } from "./slack";
 import * as log from "./logger";
 
-const VALID_TARGETS = ["all", "claude", "gemini", "chatgpt"] as const;
+const VALID_TARGETS = ["all", "claude-code", "claude-blog", "gemini", "chatgpt"] as const;
 type Target = (typeof VALID_TARGETS)[number];
 
 function printUsage(): void {
@@ -15,19 +15,21 @@ Usage:
   npx tsx src/index.ts [target] [options]
 
 Targets:
-  all       Check all sources (default)
-  claude    Check Claude Code changelog only
-  gemini    Check Gemini changelog only
-  chatgpt   Check ChatGPT changelog only
+  all           Check all sources (default)
+  claude-code   Check Claude Code changelog only
+  claude-blog   Check Claude Blog only
+  gemini        Check Gemini changelog only
+  chatgpt       Check ChatGPT changelog only
 
 Options:
   --dry-run   Check for changes without sending notifications
   --help      Show this help message
 
 Examples:
-  npx tsx src/index.ts              # Check all sources
-  npx tsx src/index.ts claude       # Check Claude only
-  npx tsx src/index.ts --dry-run    # Dry run all sources
+  npx tsx src/index.ts                  # Check all sources
+  npx tsx src/index.ts claude-code      # Check Claude Code only
+  npx tsx src/index.ts claude-blog      # Check Claude Blog only
+  npx tsx src/index.ts --dry-run        # Dry run all sources
   npx tsx src/index.ts gemini --dry-run
 `);
 }

@@ -20,7 +20,8 @@ tests/
 
 ```bash
 npm run check              # Check all sources
-npm run check:claude       # Check Claude only
+npm run check:claude-code  # Check Claude Code only
+npm run check:claude-blog  # Check Claude Blog only
 npm run check:gemini       # Check Gemini only
 npm run check:chatgpt      # Check ChatGPT only
 npm run check:dry          # Dry run (no notifications)
@@ -40,12 +41,20 @@ npm run test:coverage      # Generate coverage reports
 ## Parser Types
 
 - `markdown`: Direct fetch, extracts semver from headers (Claude Code)
-- `wayback`: Wayback Machine archive, extracts date (Gemini, ChatGPT)
+- `wayback`: Wayback Machine archive, extracts date (Gemini, ChatGPT) or blog posts (Claude Blog)
+
+## Sources
+
+- **Claude Code** (`claude-code`): Monitors Claude Code's CHANGELOG.md via direct fetch
+- **Claude Blog** (`claude-blog`): Monitors https://claude.com/blog via Wayback Machine, detects new blog posts by title
+- **Gemini** (`gemini`): Monitors Gemini release notes via Wayback Machine
+- **ChatGPT** (`chatgpt`): Monitors ChatGPT release notes via Wayback Machine
 
 ## Environment Variables
 
 Slack webhook URLs are configured via environment variables:
-- `SLACK_WEBHOOK_CLAUDE`
+- `SLACK_WEBHOOK_CLAUDE_CODE`
+- `SLACK_WEBHOOK_CLAUDE_BLOG`
 - `SLACK_WEBHOOK_GEMINI`
 - `SLACK_WEBHOOK_CHATGPT`
 

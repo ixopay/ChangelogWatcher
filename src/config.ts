@@ -1,6 +1,6 @@
 import path from "path";
 
-export type SourceId = "claude" | "gemini" | "chatgpt";
+export type SourceId = "claude-code" | "claude-blog" | "gemini" | "chatgpt";
 
 export interface ReleaseSource {
   id: SourceId;
@@ -13,14 +13,23 @@ export interface ReleaseSource {
 }
 
 export const SOURCES: Record<SourceId, ReleaseSource> = {
-  claude: {
-    id: "claude",
+  "claude-code": {
+    id: "claude-code",
     name: "Claude Code",
     url: "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md",
     parserType: "markdown",
-    stateFile: "claude.json",
+    stateFile: "claude-code.json",
     releasePageUrl: "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md",
-    slackWebhookUrl: process.env.SLACK_WEBHOOK_CLAUDE || "",
+    slackWebhookUrl: process.env.SLACK_WEBHOOK_CLAUDE_CODE || "",
+  },
+  "claude-blog": {
+    id: "claude-blog",
+    name: "Claude Blog",
+    url: "https://claude.com/blog",
+    parserType: "wayback",
+    stateFile: "claude-blog.json",
+    releasePageUrl: "https://claude.com/blog",
+    slackWebhookUrl: process.env.SLACK_WEBHOOK_CLAUDE_BLOG || "",
   },
   gemini: {
     id: "gemini",

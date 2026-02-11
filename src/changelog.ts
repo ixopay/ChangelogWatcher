@@ -101,7 +101,13 @@ export function isNewerIdentifier(
     // Use semver comparison for Claude versions
     return compareVersions(newId, oldId) > 0;
   } else {
-    // Wayback uses YYYY.MM.DD format - lexicographic comparison works
+    // Try parsing as human-readable dates first (e.g., "January 12, 2026")
+    const newDate = parseMonthDayYearDate(newId);
+    const oldDate = parseMonthDayYearDate(oldId);
+    if (newDate && oldDate) {
+      return newDate.getTime() > oldDate.getTime();
+    }
+    // Fall through to lexicographic comparison (works for Gemini's YYYY.MM.DD)
     return newId > oldId;
   }
 }
@@ -128,13 +134,27 @@ export function extractGeminiDate(html: string): string | null {
   return match ? match[0] : null;
 }
 
-// Extract date from ChatGPT page (format: "January 12, 2026")
-export function extractChatGPTDate(html: string): string | null {
+// Extract date from human-readable format (e.g., "January 12, 2026")
+// Used by ChatGPT and other sources with "Month DD, YYYY" dates
+export function extractMonthDayYearDate(html: string): string | null {
   const months =
     "January|February|March|April|May|June|July|August|September|October|November|December";
   const regex = new RegExp(`(${months})\\s+\\d{1,2},\\s+20\\d{2}`);
   const match = html.match(regex);
   return match ? match[0] : null;
+}
+
+// Parse a human-readable date string (e.g., "January 12, 2026") into a Date object
+export function parseMonthDayYearDate(dateStr: string): Date | null {
+  const months: Record<string, number> = {
+    January: 0, February: 1, March: 2, April: 3, May: 4, June: 5,
+    July: 6, August: 7, September: 8, October: 9, November: 10, December: 11,
+  };
+  const match = dateStr.match(/^(\w+)\s+(\d{1,2}),\s+(\d{4})$/);
+  if (!match) return null;
+  const [, month, day, year] = match;
+  if (!(month in months)) return null;
+  return new Date(parseInt(year), months[month], parseInt(day));
 }
 
 // Strip HTML tags and normalize whitespace
@@ -183,9 +203,10 @@ export function extractGeminiChanges(
   return withoutDate || null;
 }
 
-// Extract changes for a specific date from ChatGPT page
+// Extract changes for a specific human-readable date from a page
 // Format: "January 15, 2026\nTitle\nContent...\nJanuary 12, 2026..."
-export function extractChatGPTChanges(
+// Used by ChatGPT and other sources with "Month DD, YYYY" dates
+export function extractMonthDayYearChanges(
   html: string,
   targetDate: string
 ): string | null {
@@ -215,6 +236,80 @@ export function extractChatGPTChanges(
   // Clean up: remove the date prefix
   const withoutDate = content.replace(targetDate, "").trim();
   return withoutDate || null;
+}
+
+// =============================================================================
+// Blog Parsing Functions
+// =============================================================================
+
+export interface BlogPost {
+  title: string;
+  date: string;
+}
+
+// Extract blog posts (title + date pairs) from blog HTML, newest first
+export function extractBlogPosts(html: string): BlogPost[] {
+  const posts: BlogPost[] = [];
+
+  // Match blog post entries: look for links with titles and nearby dates
+  // Blog pages typically have structured entries with title and date
+  const text = stripHtml(html);
+
+  // Pattern: find human-readable dates and associated titles
+  // Blog posts appear as: "Title text ... Month DD, YYYY"
+  const months =
+    "January|February|March|April|May|June|July|August|September|October|November|December";
+  const datePattern = new RegExp(`(${months})\\s+\\d{1,2},\\s+20\\d{2}`, "g");
+
+  const dates: { date: string; index: number }[] = [];
+  let match;
+  while ((match = datePattern.exec(text)) !== null) {
+    dates.push({ date: match[0], index: match.index });
+  }
+
+  // For each date, look backwards for a title (text before the date, after previous date/start)
+  for (let i = 0; i < dates.length; i++) {
+    const startPos = i > 0 ? dates[i - 1].index + dates[i - 1].date.length : 0;
+    const title = text.slice(startPos, dates[i].index).trim();
+
+    if (title) {
+      posts.push({ title, date: dates[i].date });
+    }
+  }
+
+  return posts;
+}
+
+// Return all posts that are newer than the stored title
+// Posts are assumed to be in page order (newest first)
+// On first run (no stored title), returns only the newest post
+export function getNewBlogPosts(
+  posts: BlogPost[],
+  storedTitle: string | null
+): BlogPost[] {
+  if (posts.length === 0) return [];
+
+  if (!storedTitle) {
+    // First run: return only the newest post
+    return posts.slice(0, 1);
+  }
+
+  // Find the stored title in the list
+  const storedIndex = posts.findIndex((p) => p.title === storedTitle);
+
+  if (storedIndex === -1) {
+    // Stored title not found — could be removed or page restructured
+    // Return only the newest to avoid false positives
+    return posts.slice(0, 1);
+  }
+
+  if (storedIndex === 0) {
+    // No new posts — the newest post is the stored one
+    return [];
+  }
+
+  // Return all posts before the stored title (i.e., newer ones)
+  return posts.slice(0, storedIndex);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -254,6 +349,7 @@ interface ParserResult {
   version?: string;
   content?: ParsedContent;
   error?: string;
+  skipRegressionCheck?: boolean; // True when the parser handles its own newness detection (e.g., blog)
 }
 
 async function parseMarkdown(
@@ -343,7 +439,10 @@ async function fetchNewestWaybackSnapshot(
   return { timestamp, originalUrl };
 }
 
-async function parseWayback(source: ReleaseSource): Promise<ParserResult> {
+async function parseWayback(
+  source: ReleaseSource,
+  storedIdentifier: string | null
+): Promise<ParserResult> {
   // Use CDX API to get the newest snapshot (deterministic, unlike /available)
   const snapshot = await fetchNewestWaybackSnapshot(source.url);
 
@@ -371,9 +470,14 @@ async function parseWayback(source: ReleaseSource): Promise<ParserResult> {
 
   const html = await contentResponse.text();
 
+  // Blog source: multi-post detection using titles
+  if (source.id === "claude-blog") {
+    return parseBlogContent(source, html, storedIdentifier);
+  }
+
   // Extract date based on source type
   const date =
-    source.id === "gemini" ? extractGeminiDate(html) : extractChatGPTDate(html);
+    source.id === "gemini" ? extractGeminiDate(html) : extractMonthDayYearDate(html);
 
   if (!date) {
     // Fall back to generic update if date extraction fails
@@ -386,7 +490,7 @@ async function parseWayback(source: ReleaseSource): Promise<ParserResult> {
   const changes = date
     ? source.id === "gemini"
       ? extractGeminiChanges(html, date)
-      : extractChatGPTChanges(html, date)
+      : extractMonthDayYearChanges(html, date)
     : null;
 
   const formattedChanges = changes
@@ -400,6 +504,56 @@ async function parseWayback(source: ReleaseSource): Promise<ParserResult> {
       version: date ? `Updated ${date}` : "Update detected",
       formattedChanges,
     },
+  };
+}
+
+function parseBlogContent(
+  source: ReleaseSource,
+  html: string,
+  storedTitle: string | null
+): ParserResult {
+  const posts = extractBlogPosts(html);
+
+  if (posts.length === 0) {
+    return { success: false, error: "No blog posts found" };
+  }
+
+  const newPosts = getNewBlogPosts(posts, storedTitle);
+
+  if (newPosts.length === 0) {
+    // No new posts — return current newest for comparison
+    return {
+      success: true,
+      version: posts[0].title,
+      content: {
+        version: posts[0].title,
+        formattedChanges: "",
+      },
+    };
+  }
+
+  // Combine all new posts (oldest first for chronological reading)
+  const reversedNew = [...newPosts].reverse();
+  const combinedChanges = reversedNew
+    .map((p) => `${p.title} (${p.date})`)
+    .join("\n\n---\n\n");
+
+  const formattedChanges = `${source.name}\n\n${combinedChanges}\n\n${source.releasePageUrl}`;
+
+  // Version display: single title if one new post, count if multiple
+  const versionDisplay =
+    newPosts.length === 1
+      ? newPosts[0].title
+      : `${newPosts.length} new posts`;
+
+  return {
+    success: true,
+    version: newPosts[0].title, // Store the newest post title
+    content: {
+      version: versionDisplay,
+      formattedChanges,
+    },
+    skipRegressionCheck: true, // Blog handles its own newness detection via title matching
   };
 }
 
@@ -424,7 +578,7 @@ export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
         break;
 
       case "wayback":
-        result = await parseWayback(source);
+        result = await parseWayback(source, storedVersion);
         isTransient = true; // Wayback failures are transient
         break;
 
@@ -447,7 +601,9 @@ export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
     }
 
     // Prevent regression: only update if new version is actually newer
+    // Skip for parsers that handle their own newness detection (e.g., blog title matching)
     if (
+      !result.skipRegressionCheck &&
       storedVersion &&
       result.version &&
       !isNewerIdentifier(result.version, storedVersion, source.parserType)

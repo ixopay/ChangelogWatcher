@@ -14,11 +14,11 @@ vi.mock("../src/logger", () => ({
 
 // Test fixtures
 const mockClaudeSource: ReleaseSource = {
-  id: "claude",
+  id: "claude-code",
   name: "Claude Code",
   url: "https://example.com/changelog.md",
   parserType: "markdown",
-  stateFile: "claude.json",
+  stateFile: "claude-code.json",
   releasePageUrl: "https://example.com/changelog",
   slackWebhookUrl: "",
 };
@@ -40,6 +40,16 @@ const mockChatGPTSource: ReleaseSource = {
   parserType: "wayback",
   stateFile: "chatgpt.json",
   releasePageUrl: "https://help.openai.com/chatgpt-release-notes",
+  slackWebhookUrl: "",
+};
+
+const mockClaudeBlogSource: ReleaseSource = {
+  id: "claude-blog",
+  name: "Claude Blog",
+  url: "https://claude.com/blog",
+  parserType: "wayback",
+  stateFile: "claude-blog.json",
+  releasePageUrl: "https://claude.com/blog",
   slackWebhookUrl: "",
 };
 
@@ -430,6 +440,107 @@ describe("checkSource integration", () => {
 
       expect(result.hasChanged).toBe(true);
       expect(result.version).toBe("Updated January 17, 2026");
+    });
+  });
+
+  describe("wayback parser (Claude Blog)", () => {
+    const sampleBlogHtml = `
+      <html>
+        <div>
+          <h2>Introducing Claude 4.5</h2>
+          <p>February 10, 2026</p>
+          <h2>Claude gets memory</h2>
+          <p>January 28, 2026</p>
+          <h2>Model Card update</h2>
+          <p>January 15, 2026</p>
+        </div>
+      </html>
+    `;
+
+    function mockWaybackSuccess(html: string) {
+      // CDX API response
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve([
+            ["timestamp", "original"],
+            ["20260210120000", "https://claude.com/blog"],
+          ]),
+      });
+      // Wayback snapshot fetch
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(html),
+      });
+    }
+
+    it("handles first run - stores newest post title", async () => {
+      vi.mocked(hashStore.readStoredData).mockReturnValue(null);
+      mockWaybackSuccess(sampleBlogHtml);
+
+      const result = await checkSource(mockClaudeBlogSource);
+
+      expect(result.hasChanged).toBe(true);
+      expect(result.formattedChanges).toContain("Introducing Claude 4");
+      expect(hashStore.writeStoredData).toHaveBeenCalledWith(
+        mockClaudeBlogSource,
+        expect.objectContaining({ identifier: expect.stringContaining("Introducing Claude 4") })
+      );
+    });
+
+    it("detects single new post", async () => {
+      vi.mocked(hashStore.readStoredData).mockReturnValue({
+        identifier: "Claude gets memory",
+      });
+      mockWaybackSuccess(sampleBlogHtml);
+
+      const result = await checkSource(mockClaudeBlogSource);
+
+      expect(result.hasChanged).toBe(true);
+      expect(result.formattedChanges).toContain("Introducing Claude 4");
+      expect(result.formattedChanges).not.toContain("Claude gets memory");
+    });
+
+    it("detects multiple new posts", async () => {
+      vi.mocked(hashStore.readStoredData).mockReturnValue({
+        identifier: "Model Card update",
+      });
+      mockWaybackSuccess(sampleBlogHtml);
+
+      const result = await checkSource(mockClaudeBlogSource);
+
+      expect(result.hasChanged).toBe(true);
+      expect(result.version).toBe("2 new posts");
+      expect(result.formattedChanges).toContain("Introducing Claude 4");
+      expect(result.formattedChanges).toContain("Claude gets memory");
+    });
+
+    it("returns no change when newest title matches stored", async () => {
+      vi.mocked(hashStore.readStoredData).mockReturnValue({
+        identifier: "Introducing Claude 4.5",
+      });
+      mockWaybackSuccess(sampleBlogHtml);
+
+      const result = await checkSource(mockClaudeBlogSource);
+
+      expect(result.hasChanged).toBe(false);
+      expect(hashStore.writeStoredData).not.toHaveBeenCalled();
+    });
+
+    it("handles Wayback failure with isTransient flag", async () => {
+      vi.mocked(hashStore.readStoredData).mockReturnValue(null);
+
+      // CDX API returns empty/invalid response
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve([]),
+      });
+
+      const result = await checkSource(mockClaudeBlogSource);
+
+      expect(result.hasChanged).toBe(false);
+      expect(result.error).toBe("No Wayback snapshot available via CDX");
+      expect(result.isTransient).toBe(true);
     });
   });
 
