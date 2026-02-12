@@ -321,7 +321,21 @@ export function extractBlogPosts(html: string): BlogPost[] {
     }
   }
 
-  return posts;
+  // Deduplicate by title, keeping the last occurrence.
+  // The blog page has a featured section that repeats posts before the
+  // chronological list — keeping the last occurrence preserves the
+  // chronological ordering.
+  const seen = new Set<string>();
+  const deduped: BlogPost[] = [];
+  for (let i = posts.length - 1; i >= 0; i--) {
+    if (!seen.has(posts[i].title)) {
+      seen.add(posts[i].title);
+      deduped.push(posts[i]);
+    }
+  }
+  deduped.reverse();
+
+  return deduped;
 }
 
 // Return all posts that are newer than the stored title
@@ -352,8 +366,18 @@ export function getNewBlogPosts(
     return [];
   }
 
-  // Return all posts before the stored title (i.e., newer ones)
-  return posts.slice(0, storedIndex);
+  // Return posts before the stored title that are also date-newer.
+  // The blog page has a featured section with old posts that can appear
+  // before the chronological list — date filtering excludes these.
+  const storedDate = parseMonthDayYearDate(posts[storedIndex].date);
+  const candidates = posts.slice(0, storedIndex);
+
+  if (!storedDate) return candidates;
+
+  return candidates.filter((p) => {
+    const pDate = parseMonthDayYearDate(p.date);
+    return pDate && pDate.getTime() > storedDate.getTime();
+  });
 }
 
 function sleep(ms: number): Promise<void> {
