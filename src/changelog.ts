@@ -639,7 +639,11 @@ function parseBlogContent(
 // Main Entry Point
 // =============================================================================
 
-export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
+export interface CheckOptions {
+  skipSave?: boolean;
+}
+
+export async function checkSource(source: ReleaseSource, options?: CheckOptions): Promise<CheckResult> {
   try {
     // Get stored data first (needed for markdown multi-version detection)
     const storedData = readStoredData(source);
@@ -692,8 +696,10 @@ export async function checkSource(source: ReleaseSource): Promise<CheckResult> {
       return { source, hasChanged: false };
     }
 
-    // Change detected - save new identifier
-    writeStoredData(source, { identifier: result.version });
+    // Change detected - save new identifier (unless skipped)
+    if (!options?.skipSave) {
+      writeStoredData(source, { identifier: result.version });
+    }
 
     return {
       source,
