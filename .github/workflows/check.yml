@@ -27,7 +27,7 @@ jobs:
         run: npm ci
 
       - name: Check changelogs
-        run: npm run check ${{ github.event.inputs.test == 'true' && '--test' || '' }}
+        run: npm run check ${{ github.event.inputs.test == 'true' && '-- --test' || '' }}
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
