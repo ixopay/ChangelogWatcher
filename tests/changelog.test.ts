@@ -637,6 +637,34 @@ describe("extractBlogPosts", () => {
     expect(posts[0].title).toBe("Real Blog Post");
   });
 
+  it("deduplicates posts from featured section, keeping chronological order", () => {
+    const html = `
+      <!-- Featured section -->
+      <h2>Old Featured Post</h2>
+      <p>January 1, 2026</p>
+      <div><a href="/web/20260210/https://claude.com/blog/old-featured">Read more</a></div>
+      <h2>Another Featured</h2>
+      <p>December 15, 2025</p>
+
+      <!-- Chronological section -->
+      <h2>Brand New Post</h2>
+      <p>February 12, 2026</p>
+      <div><a href="/web/20260212/https://claude.com/blog/brand-new">Read more</a></div>
+      <h2>Old Featured Post</h2>
+      <p>January 1, 2026</p>
+      <div><a href="/web/20260210/https://claude.com/blog/old-featured">Read more</a></div>
+      <h2>Another Featured</h2>
+      <p>December 15, 2025</p>
+    `;
+    const posts = extractBlogPosts(html);
+    // Should be 3 unique posts, not 5
+    expect(posts).toHaveLength(3);
+    // Chronological order preserved: newest first
+    expect(posts[0].title).toBe("Brand New Post");
+    expect(posts[1].title).toBe("Old Featured Post");
+    expect(posts[2].title).toBe("Another Featured");
+  });
+
   it("handles Wayback HTML with script/style in headings section", () => {
     const html = `
       <script>var wayback = true;</script>
@@ -697,5 +725,22 @@ describe("getNewBlogPosts", () => {
   it("returns empty for empty post list", () => {
     const result = getNewBlogPosts([], "Post A");
     expect(result).toHaveLength(0);
+  });
+
+  it("filters out featured-section posts older than stored post's date", () => {
+    // Simulates page with featured section (old posts) before chronological list
+    const postsWithFeatured = [
+      { title: "Old Featured", date: "October 1, 2025" },       // featured, older
+      { title: "Another Old", date: "August 15, 2025" },        // featured, older
+      { title: "New Post B", date: "February 10, 2026" },       // chronological, newer
+      { title: "New Post A", date: "January 28, 2026" },        // chronological, newer
+      { title: "Stored Post", date: "January 12, 2026" },       // stored
+      { title: "Before Stored", date: "December 19, 2025" },    // older
+    ];
+    const result = getNewBlogPosts(postsWithFeatured, "Stored Post");
+    // Should only return the 2 actually new posts, not the featured ones
+    expect(result).toHaveLength(2);
+    expect(result[0].title).toBe("New Post B");
+    expect(result[1].title).toBe("New Post A");
   });
 });
