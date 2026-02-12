@@ -94,6 +94,21 @@ describe("checkSource integration", () => {
       });
     });
 
+    it("skips state save when skipSave is true", async () => {
+      vi.mocked(hashStore.readStoredData).mockReturnValue(null);
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: () => Promise.resolve(sampleChangelog),
+      });
+
+      const result = await checkSource(mockClaudeSource, { skipSave: true });
+
+      expect(result.hasChanged).toBe(true);
+      expect(result.version).toBe("1.2.0");
+      expect(hashStore.writeStoredData).not.toHaveBeenCalled();
+    });
+
     it("detects single version change", async () => {
       vi.mocked(hashStore.readStoredData).mockReturnValue({
         identifier: "1.1.0",

@@ -76,7 +76,7 @@ async function main(): Promise<void> {
   for (const source of sourcesToCheck) {
     log.info(`Checking ${source.name}...`);
 
-    const result = await checkSource(source);
+    const result = await checkSource(source, { skipSave: testMode });
 
     if (result.error) {
       if (result.isTransient) {
@@ -115,6 +115,25 @@ async function main(): Promise<void> {
       log.error(`  Failed to notify: ${slackResult.error}`);
       errorsEncountered++;
     }
+  }
+
+  // Trigger Wayback Machine to save fresh snapshots for wayback sources
+  const waybackSources = sourcesToCheck.filter((s) => s.parserType === "wayback");
+  if (waybackSources.length > 0) {
+    console.log();
+    log.info("Triggering Wayback Machine saves...");
+    await Promise.all(
+      waybackSources.map(async (source) => {
+        const saveUrl = `https://web.archive.org/save/${source.url}`;
+        try {
+          log.info(`  Saving ${source.name}: ${saveUrl}`);
+          const res = await fetch(saveUrl);
+          log.info(`  ${source.name}: ${res.status}`);
+        } catch (err) {
+          log.warn(`  ${source.name}: save failed (${err instanceof Error ? err.message : String(err)})`);
+        }
+      })
+    );
   }
 
   console.log();
