@@ -32,10 +32,10 @@ jobs:
 
       - name: Check changelogs
         run: |
-          FLAGS=""
-          if [ "${{ github.event.inputs.test }}" = "true" ]; then FLAGS="$FLAGS --test"; fi
-          if [ "${{ github.event.inputs.dry-run }}" = "true" ]; then FLAGS="$FLAGS --dry-run"; fi
-          npm run check ${FLAGS:+-- $FLAGS}
+          ARGS=""
+          if [ "${{ github.event.inputs.test }}" = "true" ]; then ARGS="$ARGS --test"; fi
+          if [ "${{ github.event.inputs.dry-run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          npm run check -- $ARGS
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
