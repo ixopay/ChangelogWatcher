@@ -1,8 +1,6 @@
 name: Check Changelogs
 
 on:
-  schedule:
-    - cron: '30 13 * * *'  # Daily at 07:30 CST (America/Chicago). Note: GitHub Actions uses UTC; during CDT this runs at 08:30 local.
   workflow_dispatch:
     inputs:
       test:
